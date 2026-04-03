@@ -1,71 +1,163 @@
-# YouTube Downloader App
+# Media Downloader
 
-A simple Python app for downloading YouTube videos to your computer.
-
-## Overview
-
-This project is a lightweight command-line YouTube downloader.
-It is intended to:
-
-- Download single videos from a YouTube URL
-- Save videos locally in your chosen quality/format
-- Provide a clean base you can extend with playlists, audio-only mode, and a UI
-
-## Tech Stack
-
-- Python 3.9+
-- yt-dlp (recommended YouTube download library)
+A command-line tool for downloading music from **YouTube** and **Spotify**.
 
 ## Project Structure
 
-```text
-downloader/
-	main.py
-	README.md
 ```
+downloader/
+├── youtube_downloader.py   # YouTube download functions + CLI
+├── spotify_downloader.py   # Spotify download functions + CLI
+├── spotify_secret.py       # Your Spotify API credentials (gitignored)
+├── downloads/              # Downloaded files saved here
+├── .gitignore
+└── README.md
+```
+
+---
 
 ## Setup
 
-1. Install Python 3.9 or newer.
-2. Create and activate a virtual environment (recommended).
-3. Install dependencies:
+### 1. Install Python
+
+Python 3.9 or newer is required.
+
+### 2. Install dependencies
 
 ```bash
-pip install yt-dlp
+pip install yt-dlp spotipy
 ```
 
-## Basic Usage
+### 3. Install ffmpeg (recommended)
 
-Run the app:
+ffmpeg is needed for mp3 conversion and merging video+audio streams.
 
 ```bash
-python main.py
+winget install --id Gyan.FFmpeg
 ```
 
-You can then provide a YouTube URL and download the video.
+> After installing, **restart your terminal** so ffmpeg is on PATH.
+> Without ffmpeg the tools still work but with limited format options.
 
-## Example Download Command (with yt-dlp)
+---
 
-If you want to test downloading directly before integrating full app logic:
+## YouTube Downloader
+
+No API keys needed. Works out of the box.
+
+### Download as mp3 (default)
 
 ```bash
-yt-dlp "https://www.youtube.com/watch?v=VIDEO_ID"
+python youtube_downloader.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-## Suggested Features
+### Download as video
 
-- Download best available quality automatically
-- Let user choose output folder
-- Audio-only mode (mp3/m4a)
-- Playlist support
-- Download progress display
-- Better error handling for invalid/private URLs
+```bash
+python youtube_downloader.py "https://www.youtube.com/watch?v=VIDEO_ID" -v
+```
+
+### Choose video quality
+
+```bash
+python youtube_downloader.py "URL" -v -q 720
+```
+
+### Show video info only
+
+```bash
+python youtube_downloader.py "URL" -i
+```
+
+### Custom output folder
+
+```bash
+python youtube_downloader.py "URL" -o my_folder
+```
+
+### All YouTube flags
+
+| Flag | Description |
+|------|-------------|
+| (none) | Downloads as mp3 by default |
+| `-v` | Download as video (mp4) instead of mp3 |
+| `-q 720` | Video quality: `best`, `720`, `480`, `360` |
+| `-o DIR` | Output directory (default: `downloads`) |
+| `-i` | Show video info without downloading |
+
+---
+
+## Spotify Downloader
+
+Requires free Spotify API credentials. Downloads audio by searching YouTube for the track.
+
+### 1. Get Spotify API credentials
+
+1. Go to **https://developer.spotify.com/dashboard**
+2. Log in and click **Create App**
+3. Copy your **Client ID** and **Client Secret**
+
+### 2. Set credentials
+
+Set environment variables before running:
+
+**PowerShell:**
+```powershell
+$env:SPOTIFY_CLIENT_ID="your_client_id_here"
+$env:SPOTIFY_CLIENT_SECRET="your_client_secret_here"
+```
+
+**Bash / macOS / Linux:**
+```bash
+export SPOTIFY_CLIENT_ID="your_client_id_here"
+export SPOTIFY_CLIENT_SECRET="your_client_secret_here"
+```
+
+> To make them permanent, add the export lines to your shell profile (`~/.bashrc`, `~/.zshrc`, or PowerShell `$PROFILE`).
+
+### 3. Download a track
+
+```bash
+python spotify_downloader.py "https://open.spotify.com/track/TRACK_ID"
+```
+
+### Download an album
+
+```bash
+python spotify_downloader.py "https://open.spotify.com/album/ALBUM_ID"
+```
+
+### Download a playlist
+
+```bash
+python spotify_downloader.py "https://open.spotify.com/playlist/PLAYLIST_ID"
+```
+
+### Choose audio format
+
+```bash
+python spotify_downloader.py "URL" -f flac
+```
+
+### Show track info only
+
+```bash
+python spotify_downloader.py "URL" -i
+```
+
+### All Spotify flags
+
+| Flag | Description |
+|------|-------------|
+| (none) | Downloads as mp3 by default |
+| `-f FORMAT` | Audio format: `mp3`, `flac`, `ogg`, `opus`, `m4a`, `wav` |
+| `-o DIR` | Output directory (default: `downloads`) |
+| `-i` | Show track/album/playlist info without downloading |
+
+---
 
 ## Notes
 
-- Respect YouTube's Terms of Service and local copyright laws.
+- All downloads are saved to the `downloads/` folder by default.
+- Respect the Terms of Service of YouTube and Spotify.
 - Download content only when you have permission.
-
-## Current Status
-
-The repository currently includes starter files. Expand `main.py` with downloader logic using `yt-dlp`.
