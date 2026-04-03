@@ -25,19 +25,19 @@ Python 3.9 or newer is required.
 ### 2. Install dependencies
 
 ```bash
-pip install yt-dlp spotipy
+pip install yt-dlp spotipy imageio-ffmpeg
 ```
 
-### 3. Install ffmpeg (recommended)
+### 3. ffmpeg
 
-ffmpeg is needed for mp3 conversion and merging video+audio streams.
+ffmpeg is needed for mp3 conversion, merging video+audio streams, and re-encoding audio to AAC for maximum player compatibility.
 
-```bash
-winget install --id Gyan.FFmpeg
-```
+The tool **auto-detects ffmpeg** in this order:
+1. System PATH (e.g. installed via `winget install --id Gyan.FFmpeg`)
+2. Bundled binary from the `imageio-ffmpeg` Python package (installed above)
 
-> After installing, **restart your terminal** so ffmpeg is on PATH.
-> Without ffmpeg the tools still work but with limited format options.
+> No manual ffmpeg setup is needed if you installed `imageio-ffmpeg`.
+> Without ffmpeg the tools still work but videos are limited to low-quality single-stream formats (e.g. 360p).
 
 ---
 
@@ -51,16 +51,18 @@ No API keys needed. Works out of the box.
 python youtube_downloader.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-### Download as video
+### Download as video (up to 4K)
 
 ```bash
 python youtube_downloader.py "https://www.youtube.com/watch?v=VIDEO_ID" -v
 ```
 
+With ffmpeg available, this downloads the best video + best audio streams and merges them into an MP4 with AAC audio for universal player compatibility.
+
 ### Choose video quality
 
 ```bash
-python youtube_downloader.py "URL" -v -q 720
+python youtube_downloader.py "URL" -v -q 1080
 ```
 
 ### Show video info only
@@ -81,7 +83,7 @@ python youtube_downloader.py "URL" -o my_folder
 |------|-------------|
 | (none) | Downloads as mp3 by default |
 | `-v` | Download as video (mp4) instead of mp3 |
-| `-q 720` | Video quality: `best`, `720`, `480`, `360` |
+| `-q 1080` | Video quality: `best`, `2160`, `1440`, `1080`, `720`, `480`, `360` |
 | `-o DIR` | Output directory (default: `downloads`) |
 | `-i` | Show video info without downloading |
 
