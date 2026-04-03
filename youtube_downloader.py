@@ -3,7 +3,19 @@ import shutil
 import yt_dlp
 import os
 
-HAS_FFMPEG = shutil.which("ffmpeg") is not None
+def _find_ffmpeg():
+    """Return path to ffmpeg, checking system PATH and imageio-ffmpeg fallback."""
+    path = shutil.which("ffmpeg")
+    if path:
+        return path
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except (ImportError, Exception):
+        return None
+
+FFMPEG_PATH = _find_ffmpeg()
+HAS_FFMPEG = FFMPEG_PATH is not None
 
 
 def get_video_info(url):
@@ -40,6 +52,10 @@ def download_video(url, output_dir="downloads", quality="best"):
     }
     if HAS_FFMPEG:
         opts["merge_output_format"] = "mp4"
+        opts["ffmpeg_location"] = FFMPEG_PATH
+        opts["postprocessor_args"] = {
+            "merger": ["-c:v", "copy", "-c:a", "aac", "-b:a", "192k"],
+        }
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
@@ -58,6 +74,7 @@ def download_audio(url, output_dir="downloads"):
     }
 
     if HAS_FFMPEG:
+        opts["ffmpeg_location"] = FFMPEG_PATH
         opts["postprocessors"] = [
             {
                 "key": "FFmpegExtractAudio",
