@@ -5,6 +5,16 @@ import io
 import urllib.request
 import time
 import os
+import ctypes
+
+# Enable Windows DPI awareness for sharp rendering
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-monitor DPI aware
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
 
 from PIL import Image, ImageTk
 import yt_dlp
@@ -87,9 +97,18 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Clanky Downloader v1.0")
-        self.geometry("620x860")
-        self.resizable(False, False)
+        self.resizable(True, True)
         self.configure(bg="#1e1e2e")
+
+        # Fit window to screen
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        win_w = min(1200, screen_w - 100)
+        win_h = min(1000, screen_h - 80)
+        x = (screen_w - win_w) // 2
+        y = (screen_h - win_h) // 2
+        self.geometry(f"{win_w}x{win_h}+{x}+{y}")
+        self.minsize(700, 500)
 
         self._video_info = None  # cached yt-dlp info dict
         self._thumb_image = None  # prevent GC
@@ -107,15 +126,42 @@ class App(tk.Tk):
     # ── Layout ───────────────────────────────────────────────────────────
 
     def _build_ui(self):
+        # Scrollable canvas so it works on any screen size
+        canvas = tk.Canvas(self, bg="#1e1e2e", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self._scroll_frame = ttk.Frame(canvas)
+
+        self._scroll_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=self._scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Mousewheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        # Make inner frame expand with canvas width
+        def _on_canvas_resize(event):
+            canvas.itemconfig(canvas.find_all()[0], width=event.width)
+        canvas.bind("<Configure>", _on_canvas_resize)
+
+        # All widgets go into self._scroll_frame (aliased as 'f' for brevity)
+        f = self._scroll_frame
         pad = {"padx": 14, "pady": 4}
 
-        ttk.Label(self, text="Clanky Downloader v1.0", style="Header.TLabel").pack(anchor="w", padx=14, pady=(14, 2))
-        url_frame = ttk.Frame(self)
+        ttk.Label(f, text="Clanky Downloader v1.0", style="Header.TLabel").pack(anchor="w", padx=14, pady=(14, 2))
+        url_frame = ttk.Frame(f)
         url_frame.pack(fill="x", **pad)
 
         # URL entry
-        ttk.Label(self, text="Paste URL", style="Header.TLabel").pack(anchor="w", padx=14, pady=(14, 2))
-        url_frame = ttk.Frame(self)
+        ttk.Label(f, text="Paste URL", style="Header.TLabel").pack(anchor="w", padx=14, pady=(14, 2))
+        url_frame = ttk.Frame(f)
         url_frame.pack(fill="x", **pad)
 
         self.url_var = tk.StringVar()
@@ -126,7 +172,7 @@ class App(tk.Tk):
         self.search_btn.pack(side="left", padx=(8, 0))
 
         # Source selector (YouTube / Spotify)
-        src_frame = ttk.Frame(self)
+        src_frame = ttk.Frame(f)
         src_frame.pack(fill="x", padx=14, pady=(6, 2))
         ttk.Label(src_frame, text="Source:").pack(side="left")
         self.source_var = tk.StringVar(value="youtube")
@@ -136,7 +182,7 @@ class App(tk.Tk):
                         command=self._on_source_change).pack(side="left")
 
         # Thumbnail + info area
-        self.info_frame = ttk.Frame(self)
+        self.info_frame = ttk.Frame(f)
         self.info_frame.pack(fill="x", padx=14, pady=(6, 2))
 
         self.thumb_label = ttk.Label(self.info_frame)
@@ -146,7 +192,7 @@ class App(tk.Tk):
         self.info_text.pack(side="left", anchor="nw")
 
         # ── YouTube options ──────────────────────────────────────────────
-        self.yt_frame = ttk.Frame(self)
+        self.yt_frame = ttk.Frame(f)
         self.yt_frame.pack(fill="x", padx=14, pady=(4, 0))
 
         # Format
@@ -170,21 +216,21 @@ class App(tk.Tk):
                             command=self._update_size).pack(side="left", padx=(0, 10))
 
         # ── Spotify options (hidden by default) ──────────────────────────
-        self.sp_frame = ttk.Frame(self)
+        self.sp_frame = ttk.Frame(f)
         ttk.Label(self.sp_frame, text="Audio format:", style="Header.TLabel").pack(anchor="w")
         self.sp_format_var = tk.StringVar(value="mp3")
         sf = ttk.Frame(self.sp_frame)
         sf.pack(anchor="w", pady=2)
-        for f in ("mp3", "flac", "ogg", "wav"):
-            ttk.Radiobutton(sf, text=f, variable=self.sp_format_var, value=f).pack(side="left", padx=(0, 10))
+        for fmt in ("mp3", "flac", "ogg", "wav"):
+            ttk.Radiobutton(sf, text=fmt, variable=self.sp_format_var, value=fmt).pack(side="left", padx=(0, 10))
 
         # Size label
-        self.size_label = ttk.Label(self, text="", font=("Segoe UI", 10))
+        self.size_label = ttk.Label(f, text="", font=("Segoe UI", 10))
         self.size_label.pack(anchor="w", padx=14, pady=(6, 2))
 
         # Output folder
-        ttk.Label(self, text="Save to:", style="Header.TLabel").pack(anchor="w", padx=14, pady=(6, 0))
-        dir_frame = ttk.Frame(self)
+        ttk.Label(f, text="Save to:", style="Header.TLabel").pack(anchor="w", padx=14, pady=(6, 0))
+        dir_frame = ttk.Frame(f)
         dir_frame.pack(fill="x", padx=14, pady=(2, 4))
         self.output_var = tk.StringVar(value=os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads"))
         self.output_entry = ttk.Entry(dir_frame, textvariable=self.output_var, font=("Segoe UI", 10))
@@ -192,7 +238,7 @@ class App(tk.Tk):
         ttk.Button(dir_frame, text="Browse", command=self._browse_folder).pack(side="left", padx=(8, 0))
 
         # Download button
-        self.dl_btn = ttk.Button(self, text="Download", style="Accent.TButton", command=self._on_download)
+        self.dl_btn = ttk.Button(f, text="Download", style="Accent.TButton", command=self._on_download)
         self.dl_btn.pack(pady=(10, 4))
 
         # Progress bars
@@ -202,39 +248,39 @@ class App(tk.Tk):
         prog_style.configure("Merge.Horizontal.TProgressbar", troughcolor="#313244", background="#f9e2af")
 
         # Video progress
-        self.vid_lbl = ttk.Label(self, text="Video", font=("Segoe UI", 9, "bold"))
+        self.vid_lbl = ttk.Label(f, text="Video", font=("Segoe UI", 9, "bold"))
         self.vid_lbl.pack(anchor="w", padx=14, pady=(8, 0))
         self.video_prog_var = tk.DoubleVar(value=0)
-        self.video_prog_bar = ttk.Progressbar(self, variable=self.video_prog_var, maximum=100,
-                                              length=580, style="Video.Horizontal.TProgressbar")
-        self.video_prog_bar.pack(padx=14, pady=(2, 0))
-        self.video_prog_label = ttk.Label(self, text="", font=("Segoe UI", 9))
+        self.video_prog_bar = ttk.Progressbar(f, variable=self.video_prog_var, maximum=100,
+                                              style="Video.Horizontal.TProgressbar")
+        self.video_prog_bar.pack(fill="x", padx=14, pady=(2, 0))
+        self.video_prog_label = ttk.Label(f, text="", font=("Segoe UI", 9))
         self.video_prog_label.pack(anchor="w", padx=14)
 
         # Audio progress
-        self.aud_lbl = ttk.Label(self, text="Audio", font=("Segoe UI", 9, "bold"))
+        self.aud_lbl = ttk.Label(f, text="Audio", font=("Segoe UI", 9, "bold"))
         self.aud_lbl.pack(anchor="w", padx=14, pady=(4, 0))
         self.audio_prog_var = tk.DoubleVar(value=0)
-        self.audio_prog_bar = ttk.Progressbar(self, variable=self.audio_prog_var, maximum=100,
-                                              length=580, style="Audio.Horizontal.TProgressbar")
-        self.audio_prog_bar.pack(padx=14, pady=(2, 0))
-        self.audio_prog_label = ttk.Label(self, text="", font=("Segoe UI", 9))
+        self.audio_prog_bar = ttk.Progressbar(f, variable=self.audio_prog_var, maximum=100,
+                                              style="Audio.Horizontal.TProgressbar")
+        self.audio_prog_bar.pack(fill="x", padx=14, pady=(2, 0))
+        self.audio_prog_label = ttk.Label(f, text="", font=("Segoe UI", 9))
         self.audio_prog_label.pack(anchor="w", padx=14)
 
         # Merge progress
-        self.merge_lbl = ttk.Label(self, text="Merge", font=("Segoe UI", 9, "bold"))
+        self.merge_lbl = ttk.Label(f, text="Merge", font=("Segoe UI", 9, "bold"))
         self.merge_lbl.pack(anchor="w", padx=14, pady=(4, 0))
         self.merge_prog_var = tk.DoubleVar(value=0)
-        self.merge_prog_bar = ttk.Progressbar(self, variable=self.merge_prog_var, maximum=100,
-                                              length=580, style="Merge.Horizontal.TProgressbar")
-        self.merge_prog_bar.pack(padx=14, pady=(2, 0))
-        self.merge_prog_label = ttk.Label(self, text="", font=("Segoe UI", 9))
+        self.merge_prog_bar = ttk.Progressbar(f, variable=self.merge_prog_var, maximum=100,
+                                              style="Merge.Horizontal.TProgressbar")
+        self.merge_prog_bar.pack(fill="x", padx=14, pady=(2, 0))
+        self.merge_prog_label = ttk.Label(f, text="", font=("Segoe UI", 9))
         self.merge_prog_label.pack(anchor="w", padx=14)
 
         # Status / progress
         self.status_var = tk.StringVar(value="")
-        self.status_label = ttk.Label(self, textvariable=self.status_var, foreground="#a6e3a1",
-                                      wraplength=580, justify="left")
+        self.status_label = ttk.Label(f, textvariable=self.status_var, foreground="#a6e3a1",
+                                      wraplength=860, justify="left")
         self.status_label.pack(anchor="w", padx=14, pady=(2, 10))
 
     def _browse_folder(self):
