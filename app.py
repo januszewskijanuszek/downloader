@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox
 import threading
 import io
 import urllib.request
+import time
 import os
 
 from PIL import Image, ImageTk
@@ -86,7 +87,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Clanky Downloader v1.0")
-        self.geometry("620x720")
+        self.geometry("620x820")
         self.resizable(False, False)
         self.configure(bg="#1e1e2e")
 
@@ -185,15 +186,41 @@ class App(tk.Tk):
         self.dl_btn = ttk.Button(self, text="Download", style="Accent.TButton", command=self._on_download)
         self.dl_btn.pack(pady=(10, 4))
 
-        # Progress bar
-        self.progress_var = tk.DoubleVar(value=0)
-        style = ttk.Style(self)
-        style.configure("Custom.Horizontal.TProgressbar", troughcolor="#313244", background="#89b4fa")
-        self.progress_bar = ttk.Progressbar(self, variable=self.progress_var, maximum=100,
-                                            length=580, style="Custom.Horizontal.TProgressbar")
-        self.progress_bar.pack(padx=14, pady=(4, 2))
-        self.progress_label = ttk.Label(self, text="", font=("Segoe UI", 9))
-        self.progress_label.pack(anchor="w", padx=14)
+        # Progress bars
+        prog_style = ttk.Style(self)
+        prog_style.configure("Video.Horizontal.TProgressbar", troughcolor="#313244", background="#89b4fa")
+        prog_style.configure("Audio.Horizontal.TProgressbar", troughcolor="#313244", background="#a6e3a1")
+        prog_style.configure("Merge.Horizontal.TProgressbar", troughcolor="#313244", background="#f9e2af")
+
+        # Video progress
+        self.vid_lbl = ttk.Label(self, text="Video", font=("Segoe UI", 9, "bold"))
+        self.vid_lbl.pack(anchor="w", padx=14, pady=(8, 0))
+        self.video_prog_var = tk.DoubleVar(value=0)
+        self.video_prog_bar = ttk.Progressbar(self, variable=self.video_prog_var, maximum=100,
+                                              length=580, style="Video.Horizontal.TProgressbar")
+        self.video_prog_bar.pack(padx=14, pady=(2, 0))
+        self.video_prog_label = ttk.Label(self, text="", font=("Segoe UI", 9))
+        self.video_prog_label.pack(anchor="w", padx=14)
+
+        # Audio progress
+        self.aud_lbl = ttk.Label(self, text="Audio", font=("Segoe UI", 9, "bold"))
+        self.aud_lbl.pack(anchor="w", padx=14, pady=(4, 0))
+        self.audio_prog_var = tk.DoubleVar(value=0)
+        self.audio_prog_bar = ttk.Progressbar(self, variable=self.audio_prog_var, maximum=100,
+                                              length=580, style="Audio.Horizontal.TProgressbar")
+        self.audio_prog_bar.pack(padx=14, pady=(2, 0))
+        self.audio_prog_label = ttk.Label(self, text="", font=("Segoe UI", 9))
+        self.audio_prog_label.pack(anchor="w", padx=14)
+
+        # Merge progress
+        self.merge_lbl = ttk.Label(self, text="Merge", font=("Segoe UI", 9, "bold"))
+        self.merge_lbl.pack(anchor="w", padx=14, pady=(4, 0))
+        self.merge_prog_var = tk.DoubleVar(value=0)
+        self.merge_prog_bar = ttk.Progressbar(self, variable=self.merge_prog_var, maximum=100,
+                                              length=580, style="Merge.Horizontal.TProgressbar")
+        self.merge_prog_bar.pack(padx=14, pady=(2, 0))
+        self.merge_prog_label = ttk.Label(self, text="", font=("Segoe UI", 9))
+        self.merge_prog_label.pack(anchor="w", padx=14)
 
         # Status / progress
         self.status_var = tk.StringVar(value="")
@@ -227,28 +254,48 @@ class App(tk.Tk):
         self.dl_btn.configure(state="disabled" if busy else "normal")
         self.status_var.set(msg)
         if not busy:
-            self.progress_var.set(0)
-            self.progress_label.configure(text="")
+            self.video_prog_var.set(0)
+            self.video_prog_label.configure(text="")
+            self.audio_prog_var.set(0)
+            self.audio_prog_label.configure(text="")
+            self.merge_prog_var.set(0)
+            self.merge_prog_label.configure(text="")
+            self._download_index = 0
         self.update_idletasks()
 
     def _progress_hook(self, d):
-        """yt-dlp progress callback — updates progress bar from download thread."""
+        """yt-dlp progress callback — routes to video or audio bar."""
+        info = d.get("info_dict") or {}
+        vcodec = info.get("vcodec") or "none"
+        acodec = info.get("acodec") or "none"
+        if vcodec != "none" and acodec == "none":
+            target = "video"
+        elif acodec != "none" and vcodec == "none":
+            target = "audio"
+        else:
+            target = "video" if getattr(self, "_download_index", 0) == 0 else "audio"
+
         if d.get("status") == "downloading":
             total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
             downloaded = d.get("downloaded_bytes") or 0
             speed = d.get("speed") or 0
-            if total > 0:
-                pct = downloaded / total * 100
-                self.after(0, self._update_progress, pct,
-                           f"{_format_size(downloaded)} / {_format_size(total)}  •  {_format_size(speed)}/s")
-            else:
-                self.after(0, self._update_progress, 0, f"{_format_size(downloaded)}  •  {_format_size(speed)}/s")
+            pct = (downloaded / total * 100) if total > 0 else 0
+            txt = f"{_format_size(downloaded)} / {_format_size(total)}  •  {_format_size(speed)}/s" if total else f"{_format_size(downloaded)}  •  {_format_size(speed)}/s"
+            self.after(0, self._update_bar, target, pct, txt)
         elif d.get("status") == "finished":
-            self.after(0, self._update_progress, 100, "Merging / converting…")
+            self.after(0, self._update_bar, target, 100, "Done")
+            self._download_index = getattr(self, "_download_index", 0) + 1
 
-    def _update_progress(self, pct, text):
-        self.progress_var.set(pct)
-        self.progress_label.configure(text=text)
+    def _update_bar(self, target, pct, text):
+        if target == "video":
+            self.video_prog_var.set(pct)
+            self.video_prog_label.configure(text=text)
+        elif target == "audio":
+            self.audio_prog_var.set(pct)
+            self.audio_prog_label.configure(text=text)
+        elif target == "merge":
+            self.merge_prog_var.set(pct)
+            self.merge_prog_label.configure(text=text)
         self.update_idletasks()
 
     # ── Search ───────────────────────────────────────────────────────────
@@ -348,37 +395,146 @@ class App(tk.Tk):
             self.after(0, self._set_busy, False, f"Error: {e}")
 
     def _yt_download_video(self, url, quality="best"):
-        """Download video with progress hook."""
+        """Download video with progress hook + merge tracking."""
         os.makedirs("downloads", exist_ok=True)
+        self._download_index = 0
+        self._merge_stop = threading.Event()
+        self._downloaded_bytes = 0  # sum of video+audio raw sizes
+
         if HAS_FFMPEG:
             fmt = "bestvideo+bestaudio/best"
             if quality != "best":
                 fmt = f"bestvideo[height<={quality}]+bestaudio/best[height<={quality}]"
         else:
             fmt = "best" if quality == "best" else f"best[height<={quality}]"
+
+        def _vid_progress(d):
+            """Route video/audio to their bars and track total bytes."""
+            info = d.get("info_dict") or {}
+            vcodec = info.get("vcodec") or "none"
+            acodec = info.get("acodec") or "none"
+            if vcodec != "none" and acodec == "none":
+                target = "video"
+            elif acodec != "none" and vcodec == "none":
+                target = "audio"
+            else:
+                target = "video" if self._download_index == 0 else "audio"
+
+            if d.get("status") == "downloading":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                downloaded = d.get("downloaded_bytes") or 0
+                speed = d.get("speed") or 0
+                pct = (downloaded / total * 100) if total > 0 else 0
+                txt = f"{_format_size(downloaded)} / {_format_size(total)}  •  {_format_size(speed)}/s" if total else f"{_format_size(downloaded)}  •  {_format_size(speed)}/s"
+                self.after(0, self._update_bar, target, pct, txt)
+            elif d.get("status") == "finished":
+                size = d.get("total_bytes") or d.get("total_bytes_estimate") or d.get("downloaded_bytes") or 0
+                self._downloaded_bytes += size
+                self.after(0, self._update_bar, target, 100, "Done")
+                self._download_index += 1
+
+        def _pp_hook(d):
+            """Fires when a postprocessor starts/finishes — used to track merge."""
+            status = d.get("status")
+            pp = d.get("postprocessor")
+            if pp == "Merger":
+                if status == "started":
+                    out_file = d.get("info_dict", {}).get("filepath") or ""
+                    expected = self._downloaded_bytes
+                    self._merge_stop.clear()
+                    threading.Thread(
+                        target=self._monitor_merge, args=(out_file, expected), daemon=True
+                    ).start()
+                elif status == "finished":
+                    self._merge_stop.set()
+                    self.after(0, self._update_bar, "merge", 100, "Done")
+
         opts = {
             "format": fmt,
             "outtmpl": os.path.join("downloads", "%(title)s.%(ext)s"),
             "quiet": True,
             "no_warnings": True,
-            "progress_hooks": [self._progress_hook],
+            "progress_hooks": [_vid_progress],
+            "postprocessor_hooks": [_pp_hook],
         }
         if HAS_FFMPEG:
             opts["merge_output_format"] = "mp4"
             opts["ffmpeg_location"] = FFMPEG_PATH
             opts["postprocessor_args"] = {"merger": ["-c:v", "copy", "-c:a", "aac", "-b:a", "192k"]}
+
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
+        self._merge_stop.set()
+
+    def _monitor_merge(self, out_path, expected_size):
+        """Poll the temp file size during ffmpeg merge."""
+        import glob
+
+        # yt-dlp writes merge output to a temp file: "Title.temp.mp4"
+        # Derive temp path from the final output path
+        if out_path:
+            base, ext = os.path.splitext(out_path)
+            temp_path = f"{base}.temp{ext}"
+        else:
+            temp_path = ""
+
+        # Find whichever file to monitor: temp file first, then final
+        target = ""
+        for _ in range(50):
+            if self._merge_stop.is_set():
+                return
+            if temp_path and os.path.exists(temp_path):
+                target = temp_path
+                break
+            # Fallback: look for any .temp.mp4 in downloads/
+            temps = glob.glob(os.path.join("downloads", "*.temp.mp4"))
+            if temps:
+                target = temps[0]
+                break
+            time.sleep(0.1)
+
+        if not target or not expected_size:
+            self.after(0, self._update_bar, "merge", 0, "Merging…")
+            while not self._merge_stop.is_set():
+                time.sleep(0.2)
+            return
+
+        prev_size = 0
+        stall_count = 0
+        while not self._merge_stop.is_set():
+            try:
+                current = os.path.getsize(target)
+            except OSError:
+                current = prev_size  # file may have been renamed (merge done)
+            pct = min(current / expected_size * 100, 99) if expected_size > 0 else 0
+            txt = f"{_format_size(current)} / ~{_format_size(expected_size)}"
+            self.after(0, self._update_bar, "merge", pct, txt)
+            if current == prev_size:
+                stall_count += 1
+            else:
+                stall_count = 0
+            prev_size = current
+            time.sleep(0.15)
 
     def _yt_download_audio(self, url):
         """Download audio with progress hook."""
         os.makedirs("downloads", exist_ok=True)
+        def _audio_hook(d):
+            if d.get("status") == "downloading":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                downloaded = d.get("downloaded_bytes") or 0
+                speed = d.get("speed") or 0
+                pct = (downloaded / total * 100) if total > 0 else 0
+                txt = f"{_format_size(downloaded)} / {_format_size(total)}  •  {_format_size(speed)}/s" if total else f"{_format_size(downloaded)}  •  {_format_size(speed)}/s"
+                self.after(0, self._update_bar, "audio", pct, txt)
+            elif d.get("status") == "finished":
+                self.after(0, self._update_bar, "audio", 100, "Converting…")
         opts = {
             "format": "bestaudio/best",
             "outtmpl": os.path.join("downloads", "%(title)s.%(ext)s"),
             "quiet": True,
             "no_warnings": True,
-            "progress_hooks": [self._progress_hook],
+            "progress_hooks": [_audio_hook],
         }
         if HAS_FFMPEG:
             opts["ffmpeg_location"] = FFMPEG_PATH
