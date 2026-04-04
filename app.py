@@ -85,8 +85,8 @@ def _format_duration(seconds):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Media Downloader")
-        self.geometry("620x660")
+        self.title("Clanky Downloader v1.0")
+        self.geometry("620x720")
         self.resizable(False, False)
         self.configure(bg="#1e1e2e")
 
@@ -107,6 +107,10 @@ class App(tk.Tk):
 
     def _build_ui(self):
         pad = {"padx": 14, "pady": 4}
+
+        ttk.Label(self, text="Clanky Downloader v1.0", style="Header.TLabel").pack(anchor="w", padx=14, pady=(14, 2))
+        url_frame = ttk.Frame(self)
+        url_frame.pack(fill="x", **pad)
 
         # URL entry
         ttk.Label(self, text="Paste URL", style="Header.TLabel").pack(anchor="w", padx=14, pady=(14, 2))
@@ -181,6 +185,16 @@ class App(tk.Tk):
         self.dl_btn = ttk.Button(self, text="Download", style="Accent.TButton", command=self._on_download)
         self.dl_btn.pack(pady=(10, 4))
 
+        # Progress bar
+        self.progress_var = tk.DoubleVar(value=0)
+        style = ttk.Style(self)
+        style.configure("Custom.Horizontal.TProgressbar", troughcolor="#313244", background="#89b4fa")
+        self.progress_bar = ttk.Progressbar(self, variable=self.progress_var, maximum=100,
+                                            length=580, style="Custom.Horizontal.TProgressbar")
+        self.progress_bar.pack(padx=14, pady=(4, 2))
+        self.progress_label = ttk.Label(self, text="", font=("Segoe UI", 9))
+        self.progress_label.pack(anchor="w", padx=14)
+
         # Status / progress
         self.status_var = tk.StringVar(value="")
         self.status_label = ttk.Label(self, textvariable=self.status_var, foreground="#a6e3a1",
@@ -212,6 +226,29 @@ class App(tk.Tk):
         self.search_btn.configure(state="disabled" if busy else "normal")
         self.dl_btn.configure(state="disabled" if busy else "normal")
         self.status_var.set(msg)
+        if not busy:
+            self.progress_var.set(0)
+            self.progress_label.configure(text="")
+        self.update_idletasks()
+
+    def _progress_hook(self, d):
+        """yt-dlp progress callback — updates progress bar from download thread."""
+        if d.get("status") == "downloading":
+            total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+            downloaded = d.get("downloaded_bytes") or 0
+            speed = d.get("speed") or 0
+            if total > 0:
+                pct = downloaded / total * 100
+                self.after(0, self._update_progress, pct,
+                           f"{_format_size(downloaded)} / {_format_size(total)}  •  {_format_size(speed)}/s")
+            else:
+                self.after(0, self._update_progress, 0, f"{_format_size(downloaded)}  •  {_format_size(speed)}/s")
+        elif d.get("status") == "finished":
+            self.after(0, self._update_progress, 100, "Merging / converting…")
+
+    def _update_progress(self, pct, text):
+        self.progress_var.set(pct)
+        self.progress_label.configure(text=text)
         self.update_idletasks()
 
     # ── Search ───────────────────────────────────────────────────────────
@@ -298,9 +335,9 @@ class App(tk.Tk):
             if self.source_var.get() == "youtube":
                 quality = self.quality_var.get()
                 if self.format_var.get() == "mp4":
-                    download_video(url, quality=quality)
+                    self._yt_download_video(url, quality)
                 else:
-                    download_audio(url)
+                    self._yt_download_audio(url)
                 self.after(0, self._set_busy, False, "Download complete! Saved to downloads/")
             else:
                 from spotify_downloader import download_track
@@ -309,6 +346,49 @@ class App(tk.Tk):
                 self.after(0, self._set_busy, False, "Download complete! Saved to downloads/")
         except Exception as e:
             self.after(0, self._set_busy, False, f"Error: {e}")
+
+    def _yt_download_video(self, url, quality="best"):
+        """Download video with progress hook."""
+        os.makedirs("downloads", exist_ok=True)
+        if HAS_FFMPEG:
+            fmt = "bestvideo+bestaudio/best"
+            if quality != "best":
+                fmt = f"bestvideo[height<={quality}]+bestaudio/best[height<={quality}]"
+        else:
+            fmt = "best" if quality == "best" else f"best[height<={quality}]"
+        opts = {
+            "format": fmt,
+            "outtmpl": os.path.join("downloads", "%(title)s.%(ext)s"),
+            "quiet": True,
+            "no_warnings": True,
+            "progress_hooks": [self._progress_hook],
+        }
+        if HAS_FFMPEG:
+            opts["merge_output_format"] = "mp4"
+            opts["ffmpeg_location"] = FFMPEG_PATH
+            opts["postprocessor_args"] = {"merger": ["-c:v", "copy", "-c:a", "aac", "-b:a", "192k"]}
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.download([url])
+
+    def _yt_download_audio(self, url):
+        """Download audio with progress hook."""
+        os.makedirs("downloads", exist_ok=True)
+        opts = {
+            "format": "bestaudio/best",
+            "outtmpl": os.path.join("downloads", "%(title)s.%(ext)s"),
+            "quiet": True,
+            "no_warnings": True,
+            "progress_hooks": [self._progress_hook],
+        }
+        if HAS_FFMPEG:
+            opts["ffmpeg_location"] = FFMPEG_PATH
+            opts["postprocessors"] = [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }]
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.download([url])
 
 
 if __name__ == "__main__":
