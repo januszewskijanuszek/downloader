@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import threading
 import io
 import urllib.request
@@ -87,7 +87,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Clanky Downloader v1.0")
-        self.geometry("620x820")
+        self.geometry("620x860")
         self.resizable(False, False)
         self.configure(bg="#1e1e2e")
 
@@ -182,6 +182,15 @@ class App(tk.Tk):
         self.size_label = ttk.Label(self, text="", font=("Segoe UI", 10))
         self.size_label.pack(anchor="w", padx=14, pady=(6, 2))
 
+        # Output folder
+        ttk.Label(self, text="Save to:", style="Header.TLabel").pack(anchor="w", padx=14, pady=(6, 0))
+        dir_frame = ttk.Frame(self)
+        dir_frame.pack(fill="x", padx=14, pady=(2, 4))
+        self.output_var = tk.StringVar(value=os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads"))
+        self.output_entry = ttk.Entry(dir_frame, textvariable=self.output_var, font=("Segoe UI", 10))
+        self.output_entry.pack(side="left", fill="x", expand=True)
+        ttk.Button(dir_frame, text="Browse", command=self._browse_folder).pack(side="left", padx=(8, 0))
+
         # Download button
         self.dl_btn = ttk.Button(self, text="Download", style="Accent.TButton", command=self._on_download)
         self.dl_btn.pack(pady=(10, 4))
@@ -227,6 +236,11 @@ class App(tk.Tk):
         self.status_label = ttk.Label(self, textvariable=self.status_var, foreground="#a6e3a1",
                                       wraplength=580, justify="left")
         self.status_label.pack(anchor="w", padx=14, pady=(2, 10))
+
+    def _browse_folder(self):
+        folder = filedialog.askdirectory(initialdir=self.output_var.get())
+        if folder:
+            self.output_var.set(folder)
 
     # ── Callbacks ────────────────────────────────────────────────────────
 
@@ -385,18 +399,21 @@ class App(tk.Tk):
                     self._yt_download_video(url, quality)
                 else:
                     self._yt_download_audio(url)
-                self.after(0, self._set_busy, False, "Download complete! Saved to downloads/")
+                out = self.output_var.get()
+                self.after(0, self._set_busy, False, f"Download complete! Saved to {out}")
             else:
                 from spotify_downloader import download_track
                 fmt = self.sp_format_var.get()
-                download_track(url, audio_format=fmt)
-                self.after(0, self._set_busy, False, "Download complete! Saved to downloads/")
+                out = self.output_var.get()
+                download_track(url, output_dir=out, audio_format=fmt)
+                self.after(0, self._set_busy, False, f"Download complete! Saved to {out}")
         except Exception as e:
             self.after(0, self._set_busy, False, f"Error: {e}")
 
     def _yt_download_video(self, url, quality="best"):
         """Download video with progress hook + merge tracking."""
-        os.makedirs("downloads", exist_ok=True)
+        out_dir = self.output_var.get()
+        os.makedirs(out_dir, exist_ok=True)
         self._download_index = 0
         self._merge_stop = threading.Event()
         self._downloaded_bytes = 0  # sum of video+audio raw sizes
@@ -451,7 +468,7 @@ class App(tk.Tk):
 
         opts = {
             "format": fmt,
-            "outtmpl": os.path.join("downloads", "%(title)s.%(ext)s"),
+            "outtmpl": os.path.join(out_dir, "%(title)s.%(ext)s"),
             "quiet": True,
             "no_warnings": True,
             "progress_hooks": [_vid_progress],
@@ -486,8 +503,9 @@ class App(tk.Tk):
             if temp_path and os.path.exists(temp_path):
                 target = temp_path
                 break
-            # Fallback: look for any .temp.mp4 in downloads/
-            temps = glob.glob(os.path.join("downloads", "*.temp.mp4"))
+            # Fallback: look for any .temp.mp4 in output dir
+            out_dir = self.output_var.get()
+            temps = glob.glob(os.path.join(out_dir, "*.temp.mp4"))
             if temps:
                 target = temps[0]
                 break
@@ -518,7 +536,8 @@ class App(tk.Tk):
 
     def _yt_download_audio(self, url):
         """Download audio with progress hook."""
-        os.makedirs("downloads", exist_ok=True)
+        out_dir = self.output_var.get()
+        os.makedirs(out_dir, exist_ok=True)
         def _audio_hook(d):
             if d.get("status") == "downloading":
                 total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
@@ -531,7 +550,7 @@ class App(tk.Tk):
                 self.after(0, self._update_bar, "audio", 100, "Converting…")
         opts = {
             "format": "bestaudio/best",
-            "outtmpl": os.path.join("downloads", "%(title)s.%(ext)s"),
+            "outtmpl": os.path.join(out_dir, "%(title)s.%(ext)s"),
             "quiet": True,
             "no_warnings": True,
             "progress_hooks": [_audio_hook],
