@@ -5,6 +5,7 @@ import io
 import urllib.request
 import time
 import os
+import sys
 import ctypes
 
 # Enable Windows DPI awareness for sharp rendering
@@ -232,7 +233,11 @@ class App(tk.Tk):
         ttk.Label(f, text="Save to:", style="Header.TLabel").pack(anchor="w", padx=14, pady=(6, 0))
         dir_frame = ttk.Frame(f)
         dir_frame.pack(fill="x", padx=14, pady=(2, 4))
-        self.output_var = tk.StringVar(value=os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads"))
+        if getattr(sys, 'frozen', False):
+            _app_dir = os.path.dirname(sys.executable)
+        else:
+            _app_dir = os.path.dirname(os.path.abspath(__file__))
+        self.output_var = tk.StringVar(value=os.path.join(_app_dir, "downloads"))
         self.output_entry = ttk.Entry(dir_frame, textvariable=self.output_var, font=("Segoe UI", 10))
         self.output_entry.pack(side="left", fill="x", expand=True)
         ttk.Button(dir_frame, text="Browse", command=self._browse_folder).pack(side="left", padx=(8, 0))
