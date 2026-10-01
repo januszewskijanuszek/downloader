@@ -18,6 +18,11 @@ except Exception:
         pass
 
 from PIL import Image, ImageTk
+
+import updater
+
+updater.activate()  # must precede the first yt_dlp import
+
 import yt_dlp
 
 from youtube_downloader import (
@@ -242,6 +247,16 @@ class App(tk.Tk):
         self.output_entry.pack(side="left", fill="x", expand=True)
         ttk.Button(dir_frame, text="Browse", command=self._browse_folder).pack(side="left", padx=(8, 0))
 
+        # Updater
+        upd_frame = ttk.Frame(f)
+        upd_frame.pack(fill="x", padx=14, pady=(6, 2))
+        self.update_btn = ttk.Button(upd_frame, text="Check for updates",
+                                     command=self._on_check_updates)
+        self.update_btn.pack(side="left")
+        self.update_status = ttk.Label(upd_frame, text=f"yt-dlp {yt_dlp.version.__version__}",
+                                       font=("Segoe UI", 9), foreground="#9399b2")
+        self.update_status.pack(side="left", padx=(10, 0))
+
         # Download button
         self.dl_btn = ttk.Button(f, text="Download", style="Accent.TButton", command=self._on_download)
         self.dl_btn.pack(pady=(10, 4))
@@ -293,6 +308,69 @@ class App(tk.Tk):
         if folder:
             self.output_var.set(folder)
 
+    # ── Updater ──────────────────────────────────────────────────────────
+
+    def _on_check_updates(self):
+        self.update_btn.configure(state="disabled")
+        self.update_status.configure(text="Checking…", foreground="#9399b2")
+        threading.Thread(target=self._check_updates, daemon=True).start()
+
+    def _set_update_status(self, text, colour):
+        self.update_status.configure(text=text, foreground=colour)
+
+    def _check_updates(self):
+        try:
+            results = updater.check_all(
+                progress=lambda name: self.after(0, self._set_update_status,
+                                                 f"Checking {name}…", "#9399b2"))
+        except Exception as e:
+            self.after(0, self._update_done, f"Update check failed: {e}", "#f38ba8")
+            return
+
+        outdated = [r for r in results if r.outdated]
+        blocked = [r for r in outdated if r.blocked]
+        if not outdated:
+            self.after(0, self._update_done,
+                       f"All {len(results)} packages up to date", "#a6e3a1")
+            return
+
+        updated, failures = updater.install_all(
+            results,
+            progress=lambda name: self.after(0, self._set_update_status,
+                                             f"Updating {name}…", "#f9e2af"))
+        self.after(0, self._update_installed, results, updated, failures, blocked)
+
+    def _update_done(self, text, colour):
+        self._set_update_status(text, colour)
+        self.update_btn.configure(state="normal")
+
+    def _update_installed(self, results, updated, failures, blocked):
+        by_name = {r.package.name: r for r in results}
+        lines = [f"  {n}  {by_name[n].current} → {by_name[n].latest}" for n in updated]
+        report = []
+        if lines:
+            report.append("Updated:\n" + "\n".join(lines))
+        if blocked:
+            report.append("Needs an app.exe rebuild:\n" + "\n".join(
+                f"  {r.package.name}  {r.current} → {r.latest}  ({r.blocked})" for r in blocked))
+        if failures:
+            report.append("Failed:\n" + "\n".join(f"  {n}: {err}" for n, err in failures))
+
+        colour = "#f38ba8" if failures and not updated else "#a6e3a1"
+        summary = f"{len(updated)} updated" if updated else "No packages updated"
+        if blocked:
+            summary += f", {len(blocked)} need a rebuild"
+        self._update_done(summary, colour)
+
+        if not updated:
+            messagebox.showinfo("Updates", "\n\n".join(report) or "Nothing to update.")
+            return
+
+        report.append("Restart now to apply the updates?")
+        if messagebox.askyesno("Updates installed", "\n\n".join(report)):
+            updater.restart()
+            self.destroy()
+
     # ── Callbacks ────────────────────────────────────────────────────────
 
     def _on_source_change(self):
@@ -317,6 +395,7 @@ class App(tk.Tk):
     def _set_busy(self, busy, msg=""):
         self.search_btn.configure(state="disabled" if busy else "normal")
         self.dl_btn.configure(state="disabled" if busy else "normal")
+        self.update_btn.configure(state="disabled" if busy else "normal")
         self.status_var.set(msg)
         if not busy:
             self.video_prog_var.set(0)
