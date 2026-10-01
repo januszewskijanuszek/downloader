@@ -2,5 +2,10 @@
 __pycache__/
 downloads/
 
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
 # Ignore Spotify secrets file
 spotify_secret.py
