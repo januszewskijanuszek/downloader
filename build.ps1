@@ -11,6 +11,9 @@ Write-Host "Bundling yt-dlp $ytdlp" -ForegroundColor Cyan
 
 Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
 
+# A running instance locks app.exe and makes the final copy fail.
+Get-Process app -ErrorAction SilentlyContinue | Stop-Process -Force
+
 python -m PyInstaller `
     --noconfirm `
     --onefile `
